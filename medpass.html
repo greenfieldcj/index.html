@@ -52,8 +52,15 @@
   .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;padding-top:10px;border-top:1px solid var(--tlLine);}
   .legend span{display:flex;align-items:center;gap:6px;font-size:12px;color:#cdd9d5;}
   .swatch{width:10px;height:10px;border-radius:2px;}
-  .trow{display:flex;gap:12px;align-items:center;padding:12px 14px;}
+  .trow{display:flex;gap:12px;align-items:center;padding:12px 14px;flex-wrap:wrap;}
   .trow + .trow{border-top:1px solid var(--line);}
+  .grouphdr{display:flex;align-items:center;gap:8px;padding:9px 14px;background:#f1ede3;font-family:'Sora',sans-serif;font-weight:600;font-size:14px;border-top:1px solid var(--line);}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  .seg button{border:none;background:#fff;color:var(--inkSoft);padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;}
+  .seg button.on{background:var(--teal);color:#fff;}
+  .given{display:flex;align-items:center;gap:5px;}
+  .given input{width:74px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:15px;background:#fffdf6;outline:none;}
+  .given input:focus{border-color:var(--teal);}
   .badge{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;}
   .stat{display:flex;flex-direction:column;}
   .stat .v{font-size:20px;font-weight:700;font-family:'Sora',sans-serif;color:var(--teal);}
@@ -168,6 +175,7 @@ const state={
   schedule:null,
   apiKey:localStorage.getItem("mps_key")||"",
   model:localStorage.getItem("mps_model")||"claude-sonnet-4-6",
+  view:localStorage.getItem("mps_view")||"time",
 };
 
 function buildSchedule(students,settings){
@@ -339,7 +347,10 @@ function renderOutput(){
 
   out.appendChild(h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"4px",flexWrap:"wrap",gap:"8px"}},
     h("h2",{},"Supervision schedule"),
-    h("div",{style:{display:"flex",gap:"8px"}},
+    h("div",{style:{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}},
+      (()=>{const seg=h("div",{class:"seg noprint"});
+        const mk=(val,lbl)=>{const btn=h("button",{class:state.view===val?"on":"",onclick:()=>{state.view=val;localStorage.setItem("mps_view",val);renderOutput();}},lbl);return btn;};
+        seg.appendChild(mk("time","By time"));seg.appendChild(mk("student","By student"));return seg;})(),
       h("button",{class:"btn btn-ghost bordered noprint",onclick:generate},"↺ Reset"),
       h("button",{class:"btn btn-primary noprint",style:{padding:"9px 14px",fontSize:"14px"},onclick:saveDocument},"📄 Save as document"))));
   out.appendChild(h("p",{class:"label noprint",style:{margin:"0 0 12px"}},"⠿ Drag any block to fine-tune. On iPhone, “Save as document” → share → Save to Files saves a PDF you can keep or send."));
@@ -359,17 +370,28 @@ function renderOutput(){
   tl.appendChild(legend);out.appendChild(tl);
 
   const table=h("div",{class:"panel",style:{padding:"0",overflow:"hidden"}});
-  view.slice().sort((a,b)=>a.start-b.start).forEach((r,i)=>{const c=COLORS[r.colorIndex];
+  const rowEl=(r,bg)=>{const c=COLORS[r.colorIndex];
     const badges=h("div",{style:{display:"flex",gap:"6px",flexWrap:"wrap",justifyContent:"flex-end"}});
     if(r.timeCritical)badges.appendChild(h("span",{class:"badge",style:{color:"#be123c",background:"#fde7ec"}},"💊 time-critical"));
     if(r.deviation!==0)badges.appendChild(h("span",{class:"badge",style:{color:"var(--inkSoft)",background:"#eef2f0"}},(r.deviation>0?"+":"")+r.deviation+"m"));
     if(r.windowConflict)badges.appendChild(h("span",{class:"badge",style:{color:"#9a3412",background:"#fdeede"}},"⚠ outside window"));
     if(r.overlap)badges.appendChild(h("span",{class:"badge",style:{color:"#9f1239",background:"#fde7ec"}},"⚠ overlaps"));
-    table.appendChild(h("div",{class:"trow",style:{background:i%2?"#fbfaf6":"#fff"}},
+    const givenIn=h("input",{value:state.schedule.rows[r.idx].given||"",placeholder:"––:––"});
+    givenIn.addEventListener("input",e=>state.schedule.rows[r.idx].given=e.target.value);
+    return h("div",{class:"trow",style:{background:bg?"#fbfaf6":"#fff"}},
       h("div",{class:"mono",style:{fontSize:"15px",minWidth:"96px"}},fmt(r.start)+"–"+fmt(r.end)),
       h("span",{class:"swatch",style:{width:"10px",height:"10px",borderRadius:"50%",background:c.base}}),
       h("div",{style:{minWidth:"120px"}},h("div",{style:{fontWeight:"600"}},r.studentName),h("div",{style:{fontSize:"12px",color:"var(--inkSoft)"}},"Room "+r.room+" · due "+fmt(r.targetMin))),
-      h("div",{style:{flex:"1",fontSize:"12px",color:"var(--inkSoft)",lineHeight:"1.4",minWidth:"120px"}},(r.meds||[]).length?r.meds.map(m=>m.name+(m.route?" ("+m.route+")":"")).join(", "):"—"),badges));});
+      h("div",{style:{flex:"1",fontSize:"12px",color:"var(--inkSoft)",lineHeight:"1.4",minWidth:"120px"}},(r.meds||[]).length?r.meds.map(m=>m.name+(m.route?" ("+m.route+")":"")).join(", "):"—"),
+      h("div",{class:"given noprint"},h("span",{class:"label"},"Given"),givenIn),
+      badges);
+  };
+  let stripe=0;
+  groupView(view).forEach(g=>{
+    if(g.label){const c=COLORS[g.colorIndex];
+      table.appendChild(h("div",{class:"grouphdr"},h("span",{class:"swatch",style:{width:"11px",height:"11px",borderRadius:"50%",background:c.base}}),g.label));stripe=0;}
+    g.rows.forEach(r=>table.appendChild(rowEl(r,stripe++%2)));
+  });
   out.appendChild(table);
 
   const flagged=view.filter(r=>r.windowConflict||r.overlap).length;
@@ -381,21 +403,36 @@ function renderOutput(){
 
   renderPrintDoc(view,scheduled.length,minStart,maxEnd,unsched);
 }
+function groupView(view){
+  if(state.view==="student"){
+    const groups=[];
+    state.students.forEach((s,si)=>{const rs=view.filter(r=>r.studentId===s.id).sort((a,b)=>a.start-b.start);
+      if(rs.length)groups.push({label:s.name||("Student "+(si+1)),colorIndex:si,rows:rs});});
+    return groups;
+  }
+  return [{label:null,rows:view.slice().sort((a,b)=>a.start-b.start)}];
+}
 function stat(label,value,warn){return h("div",{class:"stat"},h("span",{class:"v",style:warn?{color:"#b45309"}:{}},String(value)),h("span",{class:"l"},label));}
 
 function renderPrintDoc(view,count,minStart,maxEnd,unsched){
   const date=document.getElementById("clinDate").value||"";
-  const rows=view.slice().sort((a,b)=>a.start-b.start).map(r=>{
+  const cell=r=>{
     const notes=[];if(r.timeCritical)notes.push("time-critical");if(r.deviation!==0)notes.push((r.deviation>0?"+":"")+r.deviation+" min vs due");
     if(r.windowConflict)notes.push("OUTSIDE WINDOW");if(r.overlap)notes.push("OVERLAP");
     const meds=(r.meds||[]).length?r.meds.map(m=>m.name+(m.dose?" "+m.dose:"")+(m.route?" ("+m.route+")":"")).join("; "):"—";
-    return "<tr><td class='mono'>"+fmt(r.start)+"–"+fmt(r.end)+"</td><td>"+esc(r.studentName)+"</td><td>"+esc(r.room)+"</td><td class='mono'>"+fmt(r.targetMin)+"</td><td>"+esc(meds)+"</td><td>"+esc(notes.join(", "))+"</td></tr>";
-  }).join("");
+    const given=(state.schedule.rows[r.idx].given||"").trim();
+    return "<tr><td class='mono'>"+fmt(r.start)+"–"+fmt(r.end)+"</td><td>"+esc(r.studentName)+"</td><td>"+esc(r.room)+"</td><td class='mono'>"+fmt(r.targetMin)+"</td><td class='mono'>"+esc(given||"")+"</td><td>"+esc(meds)+"</td><td>"+esc(notes.join(", "))+"</td></tr>";
+  };
+  let rows="";
+  groupView(view).forEach(g=>{
+    if(g.label)rows+="<tr><td colspan='7' style='background:#f1ede3;font-weight:600;'>"+esc(g.label)+"</td></tr>";
+    g.rows.forEach(r=>{rows+=cell(r);});
+  });
   const uns=unsched.length?"<p style='color:#7c2d12;font-size:12px;margin-top:10px;'><strong>Could not place:</strong> "+esc(unsched.map(r=>r.studentName+" (Rm "+r.room+", "+fmt(r.targetMin)+")").join(", "))+"</p>":"";
   document.getElementById("printDoc").innerHTML=
     "<div class='pd-wrap'><div class='pd-h1'>Clinical Med Pass Supervision Schedule</div>"+
     "<div class='pd-meta'>"+(date?("Date: "+esc(date)+" · "):"")+count+" med passes · supervision span "+fmt(minStart)+"–"+fmt(maxEnd)+"</div>"+
-    "<table class='pd'><thead><tr><th>Time</th><th>Student</th><th>Room</th><th>Due</th><th>Medications</th><th>Notes</th></tr></thead><tbody>"+rows+"</tbody></table>"+uns+
+    "<table class='pd'><thead><tr><th>Time</th><th>Student</th><th>Room</th><th>Due</th><th>Given</th><th>Medications</th><th>Notes</th></tr></thead><tbody>"+rows+"</tbody></table>"+uns+
     "<div class='pd-foot'>Generated "+new Date().toLocaleString()+" · Verify all times against the MAR and facility med-administration policy.</div></div>";
 }
 function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
