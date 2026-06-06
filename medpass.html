@@ -352,6 +352,7 @@ function renderOutput(){
         const mk=(val,lbl)=>{const btn=h("button",{class:state.view===val?"on":"",onclick:()=>{state.view=val;localStorage.setItem("mps_view",val);renderOutput();}},lbl);return btn;};
         seg.appendChild(mk("time","By time"));seg.appendChild(mk("student","By student"));return seg;})(),
       h("button",{class:"btn btn-ghost bordered noprint",onclick:generate},"↺ Reset"),
+      h("button",{class:"btn btn-secondary noprint",style:{padding:"9px 14px",fontSize:"14px"},onclick:shareSchedule},"📤 Share"),
       h("button",{class:"btn btn-primary noprint",style:{padding:"9px 14px",fontSize:"14px"},onclick:saveDocument},"📄 Save as document"))));
   out.appendChild(h("p",{class:"label noprint",style:{margin:"0 0 12px"}},"⠿ Drag any block to fine-tune. On iPhone, “Save as document” → share → Save to Files saves a PDF you can keep or send."));
 
@@ -436,6 +437,29 @@ function renderPrintDoc(view,count,minStart,maxEnd,unsched){
     "<div class='pd-foot'>Generated "+new Date().toLocaleString()+" · Verify all times against the MAR and facility med-administration policy.</div></div>";
 }
 function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function buildShareText(){
+  const {view}=buildView();
+  const date=document.getElementById("clinDate").value||"";
+  let out="Med Pass Supervision Schedule"+(date?" — "+date:"")+"\n";
+  groupView(view).forEach(g=>{
+    if(g.label)out+="\n"+g.label.toUpperCase()+"\n";
+    g.rows.forEach(r=>{
+      const meds=(r.meds||[]).length?r.meds.map(m=>m.name+(m.route?" ("+m.route+")":"")).join(", "):"—";
+      const crit=r.timeCritical?" [time-critical]":"";
+      const who=g.label?"":" · "+r.studentName;
+      out+=(g.label?"  ":"")+fmt(r.start)+"–"+fmt(r.end)+"  Rm "+r.room+who+" · "+meds+crit+"\n";
+    });
+  });
+  return out.trim();
+}
+async function shareSchedule(){
+  if(!state.schedule)return;
+  const txt=buildShareText();
+  try{
+    if(navigator.share){await navigator.share({title:"Med Pass Schedule",text:txt});}
+    else{await navigator.clipboard.writeText(txt);alert("Schedule copied to clipboard — paste it into a message or email to your students.");}
+  }catch(e){/* user dismissed the share sheet — nothing to do */}
+}
 function saveDocument(){if(!state.schedule)return;window.print();}
 
 const keyEl=document.getElementById("apiKey");keyEl.value=state.apiKey;
