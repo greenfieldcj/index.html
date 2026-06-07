@@ -138,6 +138,7 @@
   <div class="sticky noprint">
     <button id="addStudent" class="btn btn-secondary">＋ Add student <span id="studentCount"></span></button>
     <button id="build" class="btn btn-primary" style="flex:1;min-width:200px;">🗓 Build supervision schedule</button>
+    <button id="clearDay" class="btn btn-ghost" title="Clear all entered data for the day">🧹 Clear day</button>
   </div>
 
   <div id="output"></div>
@@ -168,15 +169,54 @@ const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 let idc=1;const nid=()=>"id"+(idc++);
 const newPass=()=>({id:nid(),targetTime:"",timeCritical:false});
 const newPatient=()=>({id:nid(),room:"",photos:[],meds:[],passes:[newPass()],analyzing:false,error:""});
+const freshStudents=()=>[{id:nid(),name:"",patients:[newPatient()]}];
+
+function loadJSON(key,fallback){try{const v=localStorage.getItem(key);return v?JSON.parse(v):fallback;}catch(e){return fallback;}}
+function reviveStudents(arr){
+  if(!Array.isArray(arr)||!arr.length)return freshStudents();
+  let maxId=0;const scan=id=>{const n=parseInt(String(id).replace(/[^0-9]/g,""),10);if(!isNaN(n)&&n>=maxId)maxId=n+1;};
+  arr.forEach(s=>{scan(s.id);(s.patients||[]).forEach(p=>{scan(p.id);(p.passes||[]).forEach(pp=>scan(pp.id));});});
+  if(maxId>idc)idc=maxId; // keep new ids from colliding with restored ones
+  arr.forEach(s=>{
+    s.patients=(s.patients||[]).map(p=>({
+      id:p.id||nid(),room:p.room||"",photos:[], // photos are not persisted; re-add if you need to re-read
+      meds:Array.isArray(p.meds)?p.meds:[],
+      passes:(Array.isArray(p.passes)&&p.passes.length)?p.passes:[newPass()],
+      analyzing:false,error:""}));
+    if(!s.patients.length)s.patients=[newPatient()];
+  });
+  return arr;
+}
 
 const state={
-  students:[{id:nid(),name:"",patients:[newPatient()]}],
-  settings:{slotMinutes:15,standardWindow:60,criticalWindow:30},
-  schedule:null,
+  students:reviveStudents(loadJSON("mps_students",null)),
+  settings:Object.assign({slotMinutes:15,standardWindow:60,criticalWindow:30},loadJSON("mps_settings",{})),
+  schedule:loadJSON("mps_schedule",null),
   apiKey:localStorage.getItem("mps_key")||"",
   model:localStorage.getItem("mps_model")||"claude-sonnet-4-6",
   view:localStorage.getItem("mps_view")||"time",
 };
+
+function save(){
+  try{
+    const students=state.students.map(s=>({id:s.id,name:s.name,
+      patients:(s.patients||[]).map(p=>({id:p.id,room:p.room,meds:p.meds||[],passes:p.passes||[]}))}));
+    localStorage.setItem("mps_students",JSON.stringify(students));
+    localStorage.setItem("mps_settings",JSON.stringify(state.settings));
+    if(state.schedule)localStorage.setItem("mps_schedule",JSON.stringify(state.schedule));
+    else localStorage.removeItem("mps_schedule");
+    const d=document.getElementById("clinDate");if(d)localStorage.setItem("mps_date",d.value||"");
+  }catch(e){/* quota/serialization issue — ignore so the tool keeps running */}
+}
+let saveTimer=null;
+function scheduleSave(){clearTimeout(saveTimer);saveTimer=setTimeout(save,400);}
+function clearDay(){
+  if(!confirm("Clear all entered data for the day? This removes student names, room numbers, photos, meds, and pass times. Your settings and API key are kept."))return;
+  idc=1;state.students=freshStudents();state.schedule=null;
+  localStorage.removeItem("mps_students");localStorage.removeItem("mps_schedule");
+  const d=document.getElementById("clinDate");if(d){d.value=new Date().toLocaleDateString();localStorage.setItem("mps_date",d.value);}
+  renderRoster();renderOutput();
+}
 
 function buildSchedule(students,settings){
   const slot=settings.slotMinutes;const passes=[];
@@ -255,7 +295,7 @@ function generate(){
   const rows=buildSchedule(state.students,state.settings);const placed=rows.filter(r=>!r.unscheduled);
   let mn=0,mx=0;if(placed.length){mn=Math.min(...placed.map(r=>r.start));mx=Math.max(...placed.map(r=>r.end));}
   state.schedule={rows,bounds:{min:Math.floor((mn-30)/5)*5,max:Math.ceil((mx+30)/5)*5}};
-  renderOutput();document.getElementById("output").scrollIntoView({behavior:"smooth",block:"start"});
+  renderOutput();document.getElementById("output").scrollIntoView({behavior:"smooth",block:"start"});scheduleSave();
 }
 
 let trackEl=null,dragState=null;
@@ -265,7 +305,7 @@ function startDrag(e,idx){e.preventDefault();const b=state.schedule.bounds,range
 function onDragMove(e){if(!dragState)return;const d=dragState;let ns=Math.round((d.origStart+(e.clientX-d.startX)/d.pxPerMin)/5)*5;
   ns=clamp(ns,d.b.min,d.b.max-d.slot);state.schedule.rows[d.idx].start=ns;state.schedule.rows[d.idx].end=ns+d.slot;
   if(!d.raf)d.raf=requestAnimationFrame(()=>{d.raf=0;renderOutput();});}
-function onDragUp(){document.removeEventListener("pointermove",onDragMove);document.removeEventListener("pointerup",onDragUp);dragState=null;renderOutput();}
+function onDragUp(){document.removeEventListener("pointermove",onDragMove);document.removeEventListener("pointerup",onDragUp);dragState=null;renderOutput();scheduleSave();}
 
 function renderRoster(){
   const root=document.getElementById("roster");root.innerHTML="";
@@ -281,6 +321,7 @@ function renderRoster(){
     card.appendChild(grid);root.appendChild(card);});
   document.getElementById("studentCount").textContent="("+state.students.length+"/4)";
   document.getElementById("addStudent").style.display=state.students.length<4?"":"none";
+  scheduleSave();
 }
 function patientCard(s,p,col){
   const card=h("div",{class:"patient-card"});
@@ -471,9 +512,17 @@ document.getElementById("stdWin").addEventListener("input",e=>state.settings.sta
 document.getElementById("critWin").addEventListener("input",e=>state.settings.criticalWindow=Math.max(5,+e.target.value||30));
 document.getElementById("addStudent").addEventListener("click",addStudent);
 document.getElementById("build").addEventListener("click",generate);
-document.getElementById("clinDate").value=new Date().toLocaleDateString();
+document.getElementById("clearDay").addEventListener("click",clearDay);
+document.getElementById("clinDate").value=localStorage.getItem("mps_date")||new Date().toLocaleDateString();
+
+// autosave: catch typing/selection anywhere, plus a final flush when the tab is closed or backgrounded
+document.addEventListener("input",scheduleSave);
+document.addEventListener("change",scheduleSave);
+window.addEventListener("pagehide",save);
+document.addEventListener("visibilitychange",()=>{if(document.hidden)save();});
 
 renderRoster();
+if(state.schedule)renderOutput();
 </script>
 </body>
 </html>
