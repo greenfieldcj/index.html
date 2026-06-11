@@ -404,6 +404,16 @@ function renderOutput(){
   out.appendChild(h("div",{style:{display:"flex",gap:"18px",flexWrap:"wrap",marginTop:"14px"}},
     stat("Med passes",scheduled.length),stat("Span",fmt(minStart)+"–"+fmt(maxEnd)),
     stat("At bedside",(scheduled.length*slot)+" min"),flagged?stat("Flagged",flagged,true):null));
+  const repStudents=state.students.filter(s=>view.some(r=>r.studentId===s.id));
+  if(repStudents.length){
+    const box=h("div",{style:{display:"flex",flexWrap:"wrap",gap:"8px"}});
+    repStudents.forEach(s=>{const si=state.students.indexOf(s);
+      box.appendChild(h("button",{class:"btn btn-secondary",style:{padding:"9px 14px",fontSize:"14px"},onclick:()=>printStudentReport(s.id)},"📄 "+(s.name||("Student "+(si+1)))));});
+    out.appendChild(h("div",{class:"noprint",style:{marginTop:"18px"}},
+      h("div",{class:"label",style:{fontWeight:"600",marginBottom:"4px"}},"📄 Per-student reports — due vs. actual"),
+      h("div",{class:"label",style:{marginBottom:"8px"}},"Enter each Given time above, then tap a student to save their individual report (one PDF per student)."),
+      box));
+  }
   if(unsched.length)out.appendChild(h("div",{style:{marginTop:"14px",padding:"14px",borderRadius:"10px",background:"#fdeede",color:"#7c2d12",fontSize:"13px"}},
     h("strong",{},"Could not place: "),unsched.map(r=>r.studentName+" (Rm "+r.room+", "+fmt(r.targetMin)+")").join(", ")+". Widen a window or stagger the times."));
 
@@ -465,7 +475,38 @@ async function shareSchedule(){
     else{await navigator.clipboard.writeText(txt);alert("Schedule copied to clipboard — paste it into a message or email to your students.");}
   }catch(e){/* user dismissed the share sheet — nothing to do */}
 }
-function saveDocument(){if(!state.schedule)return;window.print();}
+function saveDocument(){
+  if(!state.schedule)return;
+  const {view,scheduled,unsched}=buildView();
+  if(scheduled.length){
+    const minStart=Math.min(...scheduled.map(x=>x.r.start)),maxEnd=Math.max(...scheduled.map(x=>x.r.end));
+    renderPrintDoc(view,scheduled.length,minStart,maxEnd,unsched);
+  }
+  window.print();
+}
+function studentReportDoc(sid){
+  const s=state.students.find(x=>x.id===sid);const si=state.students.indexOf(s);
+  const {view}=buildView();
+  const rows=view.filter(r=>r.studentId===sid).sort((a,b)=>a.start-b.start);
+  const date=document.getElementById("clinDate").value||"";
+  let given=0,within=0;const total=rows.length;
+  const trs=rows.map(r=>{
+    const dueMin=r.targetMin;
+    const gv=(state.schedule.rows[r.idx].given||"").trim();
+    const gm=parseTime(gv);
+    let varTxt="—",note=r.timeCritical?"time-critical":"";
+    if(gm!==null){given++;const d=gm-dueMin;varTxt=(d>0?"+":"")+d+" min";
+      const ok=Math.abs(d)<=r.window;if(ok)within++;note=(note?note+"; ":"")+(ok?"within window":"OUTSIDE window");}
+    const meds=(r.meds||[]).length?r.meds.map(m=>m.name+(m.dose?" "+m.dose:"")+(m.route?" ("+m.route+")":"")).join("; "):"—";
+    return "<tr><td class='mono'>"+fmt(r.start)+"–"+fmt(r.end)+"</td><td>"+esc(r.room)+"</td><td class='mono'>"+fmt(dueMin)+"</td><td class='mono'>"+esc(gm!==null?fmt(gm):(gv||""))+"</td><td>"+esc(varTxt)+"</td><td>"+esc(meds)+"</td><td>"+esc(note)+"</td></tr>";
+  }).join("");
+  const summary=total?(given+" of "+total+" passes charted · "+within+" of "+given+" given within the allowable window"):"No scheduled passes for this student.";
+  return "<div class='pd-wrap'><div class='pd-h1'>Med Pass Report — "+esc(s.name||("Student "+(si+1)))+"</div>"+
+    "<div class='pd-meta'>"+(date?("Date: "+esc(date)+" · "):"")+esc(summary)+"</div>"+
+    "<table class='pd'><thead><tr><th>Window</th><th>Room</th><th>Due</th><th>Given</th><th>Variance</th><th>Medications</th><th>Notes</th></tr></thead><tbody>"+trs+"</tbody></table>"+
+    "<div class='pd-foot'>Generated "+new Date().toLocaleString()+" · Times reflect supervised administration. Verify against the MAR and facility medication-administration policy.</div></div>";
+}
+function printStudentReport(sid){document.getElementById("printDoc").innerHTML=studentReportDoc(sid);window.print();}
 
 function reflow(){
   if(!state.schedule)return;
