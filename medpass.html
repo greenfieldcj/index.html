@@ -408,14 +408,23 @@ function renderOutput(){
     if(r.deviation!==0)badges.appendChild(h("span",{class:"badge",style:{color:"var(--inkSoft)",background:"#eef2f0"}},(r.deviation>0?"+":"")+r.deviation+"m"));
     if(r.windowConflict)badges.appendChild(h("span",{class:"badge",style:{color:"#9a3412",background:"#fdeede"}},"⚠ outside window"));
     if(r.overlap)badges.appendChild(h("span",{class:"badge",style:{color:"#9f1239",background:"#fde7ec"}},"⚠ overlaps"));
-    const givenIn=h("input",{value:state.schedule.rows[r.idx].given||"",placeholder:"––:––"});
-    givenIn.addEventListener("input",e=>state.schedule.rows[r.idx].given=e.target.value);
-    return h("div",{class:"trow",style:{background:bg?"#fbfaf6":"#fff"}},
+    const rowRef=state.schedule.rows[r.idx];
+    const ng=!!rowRef.notGiven;
+    const done=!ng&&(rowRef.given||"").trim()!=="";
+    const givenIn=h("input",{value:rowRef.given||"",placeholder:"––:––"});
+    givenIn.disabled=ng;
+    if(ng)givenIn.style.opacity="0.4";
+    givenIn.addEventListener("input",e=>rowRef.given=e.target.value);
+    givenIn.addEventListener("change",()=>{persist();renderOutput();});   // save + recolor when the field loses focus
+    const ngBtn=h("button",{class:"btn",style:{padding:"6px 10px",fontSize:"12px",borderRadius:"7px",fontWeight:"600",
+      border:"1px solid "+(ng?"#be123c":"var(--line)"),background:ng?"#fde7ec":"#fff",color:ng?"#be123c":"var(--inkSoft)"},
+      onclick:()=>{rowRef.notGiven=!rowRef.notGiven;persist();renderOutput();}},ng?"✕ Not given":"Not given");
+    return h("div",{class:"trow",style:{background:ng?"#fdf2f4":(done?"#fef9c3":(bg?"#fbfaf6":"#fff"))}},
       h("div",{class:"mono",style:{fontSize:"15px",minWidth:"96px"}},fmt(r.start)+"–"+fmt(r.end)),
       h("span",{class:"swatch",style:{width:"10px",height:"10px",borderRadius:"50%",background:c.base}}),
       h("div",{style:{minWidth:"120px"}},h("div",{style:{fontWeight:"600"}},r.studentName),h("div",{style:{fontSize:"12px",color:r.action==="stop"?"#9a3412":"var(--inkSoft)"}},"Room "+r.room+" · "+actWord(r)+" "+fmt(r.targetMin))),
       h("div",{style:{flex:"1",fontSize:"12px",color:"var(--inkSoft)",lineHeight:"1.4",minWidth:"120px"}},(r.meds||[]).length?r.meds.map(m=>spx(m)+m.name+(m.route?" ("+m.route+")":"")).join(", "):"—"),
-      h("div",{class:"given noprint"},h("span",{class:"label"},"Given"),givenIn),
+      h("div",{class:"given noprint"},h("span",{class:"label"},"Given"),givenIn,ngBtn),
       badges);
   };
   let stripe=0;
@@ -459,11 +468,12 @@ function stat(label,value,warn){return h("div",{class:"stat"},h("span",{class:"v
 function renderPrintDoc(view,count,minStart,maxEnd,unsched){
   const date=document.getElementById("clinDate").value||"";
   const cell=r=>{
-    const notes=[];if(r.action==="stop")notes.push("STOP / discontinue");if(r.timeCritical)notes.push("time-critical");if(r.deviation!==0)notes.push((r.deviation>0?"+":"")+r.deviation+" min vs due");
+    const row=state.schedule.rows[r.idx];const ng=!!row.notGiven;
+    const notes=[];if(ng)notes.push("NOT GIVEN");if(r.action==="stop")notes.push("STOP / discontinue");if(r.timeCritical)notes.push("time-critical");if(r.deviation!==0)notes.push((r.deviation>0?"+":"")+r.deviation+" min vs due");
     if(r.windowConflict)notes.push("OUTSIDE WINDOW");if(r.overlap)notes.push("OVERLAP");
     const meds=(r.meds||[]).length?r.meds.map(m=>spx(m)+m.name+(m.dose?" "+m.dose:"")+(m.route?" ("+m.route+")":"")).join("; "):"—";
-    const given=(state.schedule.rows[r.idx].given||"").trim();
-    return "<tr><td class='mono'>"+fmt(r.start)+"–"+fmt(r.end)+"</td><td>"+esc(r.studentName)+"</td><td>"+esc(r.room)+"</td><td class='mono'>"+fmt(r.targetMin)+(r.action==="stop"?" (stop)":"")+"</td><td class='mono'>"+esc(given||"")+"</td><td>"+esc(meds)+"</td><td>"+esc(notes.join(", "))+"</td></tr>";
+    const given=ng?"not given":((row.given||"").trim());
+    return "<tr><td class='mono'>"+fmt(r.start)+"–"+fmt(r.end)+"</td><td>"+esc(r.studentName)+"</td><td>"+esc(r.room)+"</td><td class='mono'>"+fmt(r.targetMin)+(r.action==="stop"?" (stop)":"")+"</td><td class='mono'>"+esc(given)+"</td><td>"+esc(meds)+"</td><td>"+esc(notes.join(", "))+"</td></tr>";
   };
   let rows="";
   groupView(view).forEach(g=>{
@@ -517,18 +527,20 @@ function studentReportDoc(sid){
   const {view}=buildView();
   const rows=view.filter(r=>r.studentId===sid).sort((a,b)=>a.start-b.start);
   const date=document.getElementById("clinDate").value||"";
-  let given=0,within=0;const total=rows.length;
+  let given=0,within=0,notgiven=0;const total=rows.length;
   const trs=rows.map(r=>{
-    const dueMin=r.targetMin;
-    const gv=(state.schedule.rows[r.idx].given||"").trim();
+    const dueMin=r.targetMin;const row=state.schedule.rows[r.idx];const ng=!!row.notGiven;
+    const gv=(row.given||"").trim();
     const gm=parseTime(gv);
-    let varTxt="—",note=(r.action==="stop"?"STOP / discontinue":"")+(r.timeCritical?(r.action==="stop"?"; time-critical":"time-critical"):"");
-    if(gm!==null){given++;const d=gm-dueMin;varTxt=(d>0?"+":"")+d+" min";
-      const ok=Math.abs(d)<=r.window;if(ok)within++;note=(note?note+"; ":"")+(ok?"within window":"OUTSIDE window");}
+    let varTxt="—",givenCell="",note=(r.action==="stop"?"STOP / discontinue":"")+(r.timeCritical?(r.action==="stop"?"; time-critical":"time-critical"):"");
+    if(ng){notgiven++;givenCell="not given";note=(note?note+"; ":"")+"NOT GIVEN";}
+    else{givenCell=(gm!==null?fmt(gm):(gv||""));
+      if(gm!==null){given++;const d=gm-dueMin;varTxt=(d>0?"+":"")+d+" min";
+        const ok=Math.abs(d)<=r.window;if(ok)within++;note=(note?note+"; ":"")+(ok?"within window":"OUTSIDE window");}}
     const meds=(r.meds||[]).length?r.meds.map(m=>spx(m)+m.name+(m.dose?" "+m.dose:"")+(m.route?" ("+m.route+")":"")).join("; "):"—";
-    return "<tr><td class='mono'>"+fmt(r.start)+"–"+fmt(r.end)+"</td><td>"+esc(r.room)+"</td><td class='mono'>"+fmt(dueMin)+(r.action==="stop"?" (stop)":"")+"</td><td class='mono'>"+esc(gm!==null?fmt(gm):(gv||""))+"</td><td>"+esc(varTxt)+"</td><td>"+esc(meds)+"</td><td>"+esc(note)+"</td></tr>";
+    return "<tr><td class='mono'>"+fmt(r.start)+"–"+fmt(r.end)+"</td><td>"+esc(r.room)+"</td><td class='mono'>"+fmt(dueMin)+(r.action==="stop"?" (stop)":"")+"</td><td class='mono'>"+esc(givenCell)+"</td><td>"+esc(varTxt)+"</td><td>"+esc(meds)+"</td><td>"+esc(note)+"</td></tr>";
   }).join("");
-  const summary=total?(given+" of "+total+" passes charted · "+within+" of "+given+" given within the allowable window"):"No scheduled passes for this student.";
+  const summary=total?(given+" of "+total+" passes charted"+(notgiven?(" · "+notgiven+" not given"):"")+" · "+within+" of "+given+" given within the allowable window"):"No scheduled passes for this student.";
   return "<div class='pd-wrap'><div class='pd-h1'>Med Pass Report — "+esc(s.name||("Student "+(si+1)))+"</div>"+
     "<div class='pd-meta'>"+(date?("Date: "+esc(date)+" · "):"")+esc(summary)+"</div>"+
     "<table class='pd'><thead><tr><th>Window</th><th>Room</th><th>Due</th><th>Given</th><th>Variance</th><th>Medications</th><th>Notes</th></tr></thead><tbody>"+trs+"</tbody></table>"+
@@ -636,6 +648,9 @@ document.getElementById("clinDate").value=window.__clinDate||new Date().toLocale
 let __pt;const autosave=()=>{clearTimeout(__pt);__pt=setTimeout(persist,400);};
 document.addEventListener("input",autosave);
 document.addEventListener("change",autosave);
+document.addEventListener("visibilitychange",()=>{if(document.hidden)persist();});
+window.addEventListener("pagehide",persist);
+window.addEventListener("beforeunload",persist);
 
 renderRoster();
 if(state.schedule)renderOutput();
