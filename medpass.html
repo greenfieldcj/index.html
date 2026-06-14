@@ -153,13 +153,13 @@
   </div>
 
   <div id="output"></div>
-  <div class="label" style="text-align:center;margin-top:24px;opacity:.55;">Med Pass Scheduler · build 2026-06-11b</div>
+  <div class="label" style="text-align:center;margin-top:24px;opacity:.55;">Med Pass Scheduler · build 2026-06-11c</div>
 </div>
 
 <div id="printDoc"></div>
 
 <script>
-const COLORS=[{base:"#0d9488",bright:"#2dd4bf"},{base:"#c2700a",bright:"#f59e0b"},{base:"#4338ca",bright:"#818cf8"},{base:"#be123c",bright:"#fb7185"}];
+const COLORS=[{base:"#0d9488",bright:"#2dd4bf"},{base:"#c2700a",bright:"#f59e0b"},{base:"#4338ca",bright:"#818cf8"},{base:"#be123c",bright:"#fb7185"},{base:"#7c3aed",bright:"#c4b5fd"},{base:"#0369a1",bright:"#38bdf8"},{base:"#15803d",bright:"#4ade80"},{base:"#b45309",bright:"#fbbf24"}];
 
 function h(tag,attrs,...kids){
   const el=document.createElement(tag);
@@ -245,7 +245,7 @@ function fileToImage(file){return new Promise((res,rej)=>{const r=new FileReader
   r.onerror=()=>rej(new Error("read failed"));r.readAsDataURL(file);});}
 
 function findP(sid,pid){const s=state.students.find(x=>x.id===sid);return[s,s&&s.patients.find(p=>p.id===pid)];}
-function addStudent(){if(state.students.length<4){state.students.push({id:nid(),name:"",patients:[newPatient()]});renderRoster();}}
+function addStudent(){if(state.students.length<8){state.students.push({id:nid(),name:"",patients:[newPatient()]});renderRoster();}}
 function removeStudent(sid){state.students=state.students.filter(s=>s.id!==sid);renderRoster();}
 function addPatient(sid){const s=state.students.find(x=>x.id===sid);if(s&&s.patients.length<5){s.patients.push(newPatient());renderRoster();}}
 function removePatient(sid,pid){const s=state.students.find(x=>x.id===sid);if(s){s.patients=s.patients.filter(p=>p.id!==pid);renderRoster();}}
@@ -308,8 +308,8 @@ function renderRoster(){
     s.patients.forEach(p=>grid.appendChild(patientCard(s,p,col)));
     if(s.patients.length<5)grid.appendChild(h("button",{class:"btn addcard noprint",onclick:()=>addPatient(s.id)},"🛏 Add patient"));
     card.appendChild(grid);root.appendChild(card);});
-  document.getElementById("studentCount").textContent="("+state.students.length+"/4)";
-  document.getElementById("addStudent").style.display=state.students.length<4?"":"none";
+  document.getElementById("studentCount").textContent="("+state.students.length+"/8)";
+  document.getElementById("addStudent").style.display=state.students.length<8?"":"none";
   persist();
 }
 function patientCard(s,p,col){
