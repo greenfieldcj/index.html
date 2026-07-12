@@ -141,6 +141,8 @@
   <div class="panel noprint row" style="justify-content:space-between;">
     <label class="row" style="gap:8px;"><span class="label" style="font-size:13px;">Clinical date</span>
       <input id="clinDate" class="inp" type="text" style="width:160px;"></label>
+    <label class="row" style="gap:8px;"><span class="label" style="font-size:13px;">Start first pass at</span>
+      <input id="firstStart" class="inp mono" type="text" placeholder="auto" style="width:80px;"><span class="label">blank = near due times</span></label>
   </div>
 
   <div id="roster"></div>
@@ -153,7 +155,7 @@
   </div>
 
   <div id="output"></div>
-  <div class="label" style="text-align:center;margin-top:24px;opacity:.55;">Med Pass Scheduler · build 2026-06-11c</div>
+  <div class="label" style="text-align:center;margin-top:24px;opacity:.55;">Med Pass Scheduler · build 2026-06-11d</div>
 </div>
 
 <div id="printDoc"></div>
@@ -184,7 +186,7 @@ const newPatient=()=>({id:nid(),room:"",rn:"",pct:"",photos:[],meds:[],passes:[n
 
 const state={
   students:[{id:nid(),name:"",patients:[newPatient()]}],
-  settings:{slotMinutes:15,standardWindow:60,criticalWindow:30,dayStart:420,dayEnd:900},
+  settings:{slotMinutes:15,standardWindow:60,criticalWindow:30,dayStart:420,dayEnd:900,firstStart:null},
   schedule:null,
   apiKey:localStorage.getItem("mps_key")||"",
   model:localStorage.getItem("mps_model")||"claude-sonnet-4-6",
@@ -281,7 +283,11 @@ async function analyze(sid,pid){
   renderRoster();
 }
 function generate(){
-  const rows=buildSchedule(state.students,state.settings);const placed=rows.filter(r=>!r.unscheduled);
+  const rows=buildSchedule(state.students,state.settings);let placed=rows.filter(r=>!r.unscheduled);
+  // if a first-pass start time is set, rigidly shift the whole schedule so the earliest pass begins there
+  const fs=state.settings.firstStart;
+  if(fs!=null&&placed.length){const earliest=Math.min(...placed.map(r=>r.start));const delta=fs-earliest;
+    if(delta!==0)placed.forEach(r=>{r.start+=delta;r.end+=delta;});}
   let mn=0,mx=0;if(placed.length){mn=Math.min(...placed.map(r=>r.start));mx=Math.max(...placed.map(r=>r.end));}
   state.schedule={rows,bounds:{min:Math.floor((mn-30)/5)*5,max:Math.ceil((mx+30)/5)*5}};
   renderOutput();persist();document.getElementById("output").scrollIntoView({behavior:"smooth",block:"start"});
@@ -647,6 +653,8 @@ document.getElementById("dayStart").value=fmt(state.settings.dayStart);
 document.getElementById("dayEnd").value=fmt(state.settings.dayEnd);
 document.getElementById("dayStart").addEventListener("input",e=>{const v=parseTime(e.target.value);if(v!==null)state.settings.dayStart=v;});
 document.getElementById("dayEnd").addEventListener("input",e=>{const v=parseTime(e.target.value);if(v!==null)state.settings.dayEnd=v;});
+if(state.settings.firstStart!=null)document.getElementById("firstStart").value=fmt(state.settings.firstStart);
+document.getElementById("firstStart").addEventListener("input",e=>{const raw=e.target.value.trim();state.settings.firstStart=raw===""?null:parseTime(raw);});
 document.getElementById("addStudent").addEventListener("click",addStudent);
 document.getElementById("build").addEventListener("click",generate);
 document.getElementById("assignSheet").addEventListener("click",printAssignment);
