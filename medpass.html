@@ -155,7 +155,7 @@
   </div>
 
   <div id="output"></div>
-  <div class="label" style="text-align:center;margin-top:24px;opacity:.55;">Med Pass Scheduler · build 2026-06-11f</div>
+  <div class="label" style="text-align:center;margin-top:24px;opacity:.55;">Med Pass Scheduler · build 2026-06-11g</div>
 </div>
 
 <div id="printDoc"></div>
@@ -457,11 +457,12 @@ function renderOutput(){
   const repStudents=state.students.filter(s=>view.some(r=>r.studentId===s.id));
   if(repStudents.length){
     const box=h("div",{style:{display:"flex",flexWrap:"wrap",gap:"8px"}});
+    box.appendChild(h("button",{class:"btn btn-primary",style:{padding:"9px 14px",fontSize:"14px"},onclick:printAllReports},"📁 Save all — one dated file"));
     repStudents.forEach(s=>{const si=state.students.indexOf(s);
       box.appendChild(h("button",{class:"btn btn-secondary",style:{padding:"9px 14px",fontSize:"14px"},onclick:()=>printStudentReport(s.id)},"📄 "+(s.name||("Student "+(si+1)))));});
     out.appendChild(h("div",{class:"noprint",style:{marginTop:"18px"}},
       h("div",{class:"label",style:{fontWeight:"600",marginBottom:"4px"}},"📄 Per-student reports — due vs. actual"),
-      h("div",{class:"label",style:{marginBottom:"8px"}},"Enter each Given time above, then tap a student to save their individual report (one PDF per student)."),
+      h("div",{class:"label",style:{marginBottom:"8px"}},"“Save all” makes one file named for the clinical day, with each student's report on its own page. Or tap a student for just their report."),
       box));
   }
   if(unsched.length)out.appendChild(h("div",{style:{marginTop:"14px",padding:"14px",borderRadius:"10px",background:"#fdeede",color:"#7c2d12",fontSize:"13px"}},
@@ -563,6 +564,19 @@ function studentReportDoc(sid){
     "<div class='pd-foot'>Generated "+new Date().toLocaleString()+" · Times reflect supervised administration. Verify against the MAR and facility medication-administration policy.</div></div>";
 }
 function printStudentReport(sid){document.getElementById("printDoc").innerHTML=studentReportDoc(sid);window.print();}
+function printAllReports(){
+  const date=document.getElementById("clinDate").value||"";
+  const {view}=buildView();
+  const studs=state.students.filter(s=>view.some(r=>r.studentId===s.id));
+  if(!studs.length){window.print();return;}
+  const header="<div class='pd-wrap' style='page-break-after:always;'><div class='pd-h1'>Clinical Med Pass Reports</div><div class='pd-meta'>"+(date?("Date: "+esc(date)+" · "):"")+studs.length+" student"+(studs.length>1?"s":"")+"</div></div>";
+  const body=studs.map((s,i)=>"<div style='page-break-before:always;'>"+studentReportDoc(s.id)+"</div>").join("");
+  document.getElementById("printDoc").innerHTML=header+body;
+  const old=document.title;
+  document.title="Med Pass Reports "+(date||"").replace(/[\\/:*?\"<>|]/g,"-");
+  window.print();
+  setTimeout(()=>{document.title=old;},1500);
+}
 function assignmentDoc(){
   const date=document.getElementById("clinDate").value||"";
   let body="";
