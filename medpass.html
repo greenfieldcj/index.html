@@ -149,13 +149,15 @@
 
   <div class="sticky noprint">
     <button id="addStudent" class="btn btn-secondary">＋ Add student <span id="studentCount"></span></button>
-    <button id="build" class="btn btn-primary" style="flex:1;min-width:200px;">🗓 Build supervision schedule</button>
+    <button id="timesBtn" class="btn btn-secondary" title="Enter all med pass times in one table">🕒 Pass times</button>
+    <button id="build" class="btn btn-primary" style="flex:1;min-width:180px;">🗓 Build supervision schedule</button>
     <button id="assignSheet" class="btn btn-secondary" title="Save the student / RN / tech assignment sheet">👥 Assignment sheet</button>
     <button id="clearDay" class="btn btn-ghost bordered" title="Start a new clinical day">🧹 Clear day</button>
   </div>
 
+  <div id="timesPanel" class="noprint"></div>
   <div id="output"></div>
-  <div class="label" style="text-align:center;margin-top:24px;opacity:.55;">Med Pass Scheduler · build 2026-06-11g</div>
+  <div class="label" style="text-align:center;margin-top:24px;opacity:.55;">Med Pass Scheduler · build 2026-06-11h</div>
 </div>
 
 <div id="printDoc"></div>
@@ -300,6 +302,38 @@ function onDragMove(e){if(!dragState)return;const d=dragState;let ns=Math.round(
   if(!d.raf)d.raf=requestAnimationFrame(()=>{d.raf=0;renderOutput();});}
 function onDragUp(){document.removeEventListener("pointermove",onDragMove);document.removeEventListener("pointerup",onDragUp);dragState=null;renderOutput();persist();}
 
+function renderTimesTable(){
+  const panel=document.getElementById("timesPanel");panel.innerHTML="";
+  const studs=state.students.filter(s=>s.patients&&s.patients.length);
+  if(!studs.length){panel.appendChild(h("div",{class:"panel",style:{color:"var(--inkSoft)"}},"Add students and their patient assignments first, then tap Pass times."));return;}
+  // count how many passes share each time (to flag duplicates)
+  const counts={};
+  studs.forEach(s=>s.patients.forEach(p=>(p.passes||[]).forEach(pp=>{const t=parseTime(pp.targetTime);if(t!==null)counts[t]=(counts[t]||0)+1;})));
+  const wrap=h("div",{class:"panel"});
+  wrap.appendChild(h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"8px",marginBottom:"8px"}},
+    h("h2",{},"Med pass times"),
+    h("button",{class:"btn btn-primary",style:{padding:"9px 16px",fontSize:"14px"},onclick:generate},"🗓 Build schedule")));
+  wrap.appendChild(h("div",{class:"label",style:{marginBottom:"10px"}},"Type the exact time for each pass. A time used by more than one pass is highlighted — space those out so you can supervise each one. Then tap Build schedule."));
+  const table=h("div",{style:{border:"1px solid var(--line)",borderRadius:"12px",overflow:"hidden"}});
+  studs.forEach(s=>{const si=state.students.indexOf(s);const col=COLORS[si];
+    table.appendChild(h("div",{class:"grouphdr"},h("span",{class:"swatch",style:{width:"11px",height:"11px",borderRadius:"50%",background:col.base}}),s.name||("Student "+(si+1))));
+    s.patients.forEach(p=>{(p.passes||[]).forEach(pass=>{
+      const t=parseTime(pass.targetTime);const dup=t!==null&&counts[t]>1;
+      const tIn=h("input",{class:"inp mono",style:{width:"96px",fontSize:"16px"},value:pass.targetTime||"",placeholder:"0000"});
+      tIn.addEventListener("input",e=>{pass.targetTime=e.target.value;persist();});
+      tIn.addEventListener("change",renderTimesTable);
+      const ref=[];if(pass.action==="stop")ref.push("STOP IV");else if(pass.timeCritical)ref.push("IV");
+      if(pass.due)ref.push("due "+fmt(parseTime(pass.due)));
+      const medc=(p.meds||[]).length;if(medc)ref.push(medc+" med"+(medc>1?"s":""));
+      table.appendChild(h("div",{style:{display:"flex",alignItems:"center",gap:"12px",padding:"10px 14px",borderTop:"1px solid var(--line)",background:dup?"#fdeede":"#fff"}},
+        h("div",{style:{flex:"1",minWidth:"120px"}},h("span",{style:{fontWeight:"600",fontSize:"14px"}},"Rm "+(p.room||"?")),ref.length?h("span",{style:{color:"var(--inkSoft)",marginLeft:"8px",fontSize:"12px"}},ref.join(" · ")):null),
+        h("span",{class:"label"},pass.action==="stop"?"Stop at":"Pass at"),tIn,
+        dup?h("span",{class:"badge",style:{color:"#9a3412",background:"#fdeede"}},"⚠ shared"):null));
+    });});
+  });
+  wrap.appendChild(table);panel.appendChild(wrap);
+  panel.scrollIntoView({behavior:"smooth",block:"start"});
+}
 function renderRoster(){
   const root=document.getElementById("roster");root.innerHTML="";
   state.students.forEach((s,si)=>{const col=COLORS[si];
@@ -672,6 +706,7 @@ if(state.settings.firstStart!=null)document.getElementById("firstStart").value=f
 document.getElementById("firstStart").addEventListener("input",e=>{const raw=e.target.value.trim();state.settings.firstStart=raw===""?null:parseTime(raw);});
 document.getElementById("addStudent").addEventListener("click",addStudent);
 document.getElementById("build").addEventListener("click",generate);
+document.getElementById("timesBtn").addEventListener("click",renderTimesTable);
 document.getElementById("assignSheet").addEventListener("click",printAssignment);
 document.getElementById("clearDay").addEventListener("click",clearDay);
 document.getElementById("clinDate").value=window.__clinDate||new Date().toLocaleDateString();
